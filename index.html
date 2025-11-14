@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri + Vue 3 App</title>
+    <style>
+      /* global reset to ensure full-height app and avoid unexpected scrollbars */
+      html, body, #app {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      *, *::before, *::after { box-sizing: inherit; }
+      /* remove default body scroll if any content fits; components can set overflow when needed */
+      body { overflow: hidden; }
+    </style>
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
