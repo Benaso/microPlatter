@@ -16,30 +16,42 @@
         
       <el-menu-item index="/Recording">
           <i class="el-icon-video-play"></i>
-          <span slot="title">Recording</span>
+          <span slot="title">
+            <img src="./assets/recordinglogo.png" alt="recording logo" class="sub-logo">
+            Recording
+          </span>
       </el-menu-item>
       <el-menu-item index="/Configuration">
           <i class="el-icon-setting"></i>
-          <span slot="title">Configuration</span>
+          <span slot="title">
+            <img src="./assets/configureLogo.png" alt="configuration logo" class="sub-logo">
+            Configuration
+          </span>
       </el-menu-item>
       <div class="menu-section-title settings-spacer">SETTINGS</div>
         
       <el-menu-item index="/Theme">
           <i class="el-icon-finished"></i>
-          <span slot="title">Theme</span>
+          <span slot="title">
+            <img src="./assets/theme.png" alt="theme logo" class="sub-logo">
+            Theme
+          </span>
       </el-menu-item>
       <el-menu-item index="/Examples">
         <i class="el-icon-copy-document"></i>
-        <span slot="title">Examples</span>
+        <span slot="title">
+          <img src="./assets/example.png" alt="example logo" class="sub-logo">
+          Examples
+        </span>
       </el-menu-item>
       </el-menu>
     </el-aside>
 
       <el-container style="height: 100%; min-height: 100%; box-sizing: border-box;">
         <el-header style="display:flex; justify-content:space-between; align-items:center; padding: 0 16px;">
-        <div style="font-weight:600">主标题</div>
+          <div style="font-weight:600">{{ currentTitle }}</div>
         
-      </el-header>
+        </el-header>
         <el-main style="padding: 16px; overflow: auto;">
           <router-view />
         </el-main>
@@ -50,6 +62,9 @@
 <script>
 export default {
   name: 'MainPage',
+  data() {
+    return { currentTitle: this.$route.meta && this.$route.meta.title ? this.$route.meta.title : '主标题' }
+  },
   methods: {
     onMenuSelect(index) {
       if (!index) return
@@ -63,6 +78,19 @@ export default {
         }
       })
     }
+  }
+  ,
+  watch: {
+    '$route'(to) {
+      const t = to.meta && to.meta.title ? to.meta.title : '主标题'
+      this.currentTitle = t
+      document.title = t
+    }
+  },
+  mounted() {
+    // ensure document.title matches on first load
+    const t = this.$route.meta && this.$route.meta.title ? this.$route.meta.title : '主标题'
+    document.title = t
   }
 }
 </script>
@@ -99,6 +127,15 @@ export default {
     height: 30px; /* 图片高度 */
     margin-right: 10px;
     object-fit: contain;
+}
+
+.sub-logo {
+    width: 20px; /* 图片宽度 */
+  height: 20px; /* 图片高度 */
+  display: inline-block;
+  vertical-align: middle; /* 与文本垂直居中 */
+  margin-right: 8px;
+  object-fit: contain;
 }
 
 /* 3. 菜单样式重置 */

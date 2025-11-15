@@ -7,10 +7,10 @@ import Page4 from '../pages/examples.vue'
 
 const routes = [
   { path: '/', redirect: '/Recording' },
-  { path: '/Recording', name: 'Recording', component: Page1 },
-  { path: '/Configuration', name: 'Configuration', component: Page2 },
-  { path: '/Theme', name: 'Theme', component: Page3 },
-  { path: '/Examples', name: 'Examples', component: Page4 },
+  { path: '/Recording', name: 'Recording', component: Page1, meta: { title: 'Recording Management' } },
+  { path: '/Configuration', name: 'Configuration', component: Page2, meta: { title: 'Configuration' } },
+  { path: '/Theme', name: 'Theme', component: Page3, meta: { title: 'Theme' } },
+  { path: '/Examples', name: 'Examples', component: Page4, meta: { title: 'Examples' } },
 ]
 
 const router = createRouter({
