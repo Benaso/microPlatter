@@ -70,12 +70,13 @@ export default {
       if (!index) return
       // menu item index is the route path
       const path = typeof index === 'string' ? index : index && index.index
+      console.log('derived path', path)
       if (!path) return
-      this.$router.push({ path }).catch(err => {
-        // ignore NavigationDuplicated or same route errors
-        if (err && err.name !== 'NavigationDuplicated') {
-          console.error(err)
-        }
+      // use direct push(path) for clarity
+      this.$router.push(path).then(() => {
+        console.log('navigated to', path)
+      }).catch(err => {
+        console.error('navigation error', err)
       })
     }
   }
