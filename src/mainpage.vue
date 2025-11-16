@@ -1,5 +1,5 @@
 <template>
-  <el-container style="height: 100vh; border: 1px solid #eee">
+  <el-container style="height: 100%; box-sizing: border-box; border: 1px solid #eee">
   <el-aside width="220px" class="dark-sidebar">
       <div class="sidebar-header">
         <img src="./assets/logo.png" alt="MicroPlatter Logo" class="sidebar-logo">
