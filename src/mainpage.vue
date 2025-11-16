@@ -52,7 +52,7 @@
           <div style="font-weight:600">{{ currentTitle }}</div>
         
         </el-header>
-        <el-main style="padding: 16px; overflow: auto;">
+  <el-main style="padding: 16px;">
           <router-view />
         </el-main>
     </el-container>
