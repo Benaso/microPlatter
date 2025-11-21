@@ -257,6 +257,33 @@ export default {
 </script>
 
 <style scoped>
+/* Prevent horizontal overflow for this page/component */
+.main-container {
+  overflow-x: hidden; /* stop page-level horizontal scroll */
+}
+
+/* ensure inner boxes include padding in width calculations */
+.main-container,
+.table-section,
+.table-placeholder,
+.chart-container,
+.el-table {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* Prevent images from forcing horizontal overflow */
+.main-container :deep(img) {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Ensure table internals can shrink below content width when needed */
+.table-placeholder :deep(.el-table__inner-wrapper) {
+  min-width: 0;
+}
+
 /* ======================== 全局布局样式：确保无全局滚动条 ======================== */
 .main-container {
   display: flex;
