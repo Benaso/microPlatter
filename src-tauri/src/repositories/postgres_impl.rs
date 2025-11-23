@@ -15,10 +15,10 @@ impl PostgresSessionRepository {
     pub async fn new(connection_string: &str) -> AppResult<Self> {
         let mut config = Config::new();
         config.url = Some(connection_string.to_string());
-
+        
         let pool = config.create_pool(Some(Runtime::Tokio1), NoTls)
             .map_err(|e| AppError::Database(e.into()))?;
-
+        
         Ok(Self { pool })
     }
 }
@@ -28,7 +28,7 @@ impl SessionRepository for PostgresSessionRepository {
     async fn init(&self) -> AppResult<()> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.into()))?;
-
+        
         client.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
                 id BIGSERIAL PRIMARY KEY,
@@ -65,7 +65,7 @@ impl SessionRepository for PostgresSessionRepository {
         
         Ok(())
     }
-
+    
     async fn create_session(&self, name: &str, description: Option<&str>) -> AppResult<i64> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.into()))?;

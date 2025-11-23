@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
-use chrono::{DataTime, Utc};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub create_at: DataTime<Utc>,
+    pub created_at: DateTime<Utc>,
     pub event_count: i64,
 }
 
@@ -15,16 +15,18 @@ pub struct SessionInfo {
     pub id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub create_at: String,
+    pub created_at: String,
     pub event_count: i64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionDto {
     pub name: String,
     pub description: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateSessionDto {
     pub name: String,

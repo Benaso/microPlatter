@@ -4,24 +4,29 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] anyhow::Error),
-
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    
     #[error("Already recording")]
     AlreadyRecording,
-
+    
     #[error("Not recording")]
     NotRecording,
-
+    
     #[error("No active session")]
     NoActiveSession,
-
+    
     #[error("Session not found: {0}")]
     SessionNotFound(i64),
-
+    
     #[error("Recording error: {0}")]
     RecordingError(String),
-
+    
     #[error("Playback error: {0}")]
-    Serialization(#[from] serde_json::Error)
+    PlaybackError(String),
+    
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -31,4 +36,3 @@ impl From<AppError> for String {
         err.to_string()
     }
 }
-

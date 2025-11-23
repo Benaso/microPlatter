@@ -4,6 +4,7 @@ use crate::error::AppResult;
 use rdev::{listen, Event, EventType};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tauri::Emitter;
 
 lazy_static::lazy_static! {
     static ref GLOBAL_RECORDS: Arc<Mutex<Vec<EventRecord>>> = Arc::new(Mutex::new(Vec::new()));
@@ -45,7 +46,7 @@ impl RecorderService {
                         Action::MouseMove { x: x as i32, y: y as i32 },
                     ));
                     
-                    let _ = app_handle.emit_all("recording-event", 
+                    let _ = app_handle.emit("recording-event", 
                         format!("MouseMove: ({}, {})", x, y));
                 }
                 EventType::ButtonPress(btn) => {
@@ -57,7 +58,7 @@ impl RecorderService {
                         Action::MouseDown { button, x, y },
                     ));
                     
-                    let _ = app_handle.emit_all("recording-event", 
+                    let _ = app_handle.emit("recording-event", 
                         format!("MouseDown: {:?}", btn));
                 }
                 EventType::ButtonRelease(btn) => {
@@ -69,7 +70,7 @@ impl RecorderService {
                         Action::MouseUp { button, x, y },
                     ));
                     
-                    let _ = app_handle.emit_all("recording-event", 
+                    let _ = app_handle.emit("recording-event", 
                         format!("MouseUp: {:?}", btn));
                 }
                 EventType::Wheel { delta_x, delta_y } => {
@@ -85,7 +86,7 @@ impl RecorderService {
                         },
                     ));
                     
-                    let _ = app_handle.emit_all("recording-event", 
+                    let _ = app_handle.emit("recording-event", 
                         format!("Wheel: ({}, {})", delta_x, delta_y));
                 }
                 EventType::KeyPress(key) => {
@@ -96,13 +97,13 @@ impl RecorderService {
                         },
                     ));
                     
-                    let _ = app_handle.emit_all("recording-event", 
+                    let _ = app_handle.emit("recording-event", 
                         format!("KeyPress: {:?}", key));
                 }
                 _ => {}
             };
             
-            let _ = app_handle.emit_all("event-count", recs.len());
+            let _ = app_handle.emit("event-count", recs.len());
         };
         
         if let Err(err) = listen(callback) {
@@ -111,18 +112,22 @@ impl RecorderService {
         
         Ok(())
     }
-
-     pub async fn save_recording(
+    
+    pub async fn save_recording(
         session_id: i64,
         repository: &dyn SessionRepository,
     ) -> AppResult<usize> {
-        let records = GLOBAL_RECORDS.lock().unwrap();
-        let count = records.len();
-        
+        // Clone the records while holding the lock, then drop the lock before awaiting.
+        let records_clone = {
+            let records = GLOBAL_RECORDS.lock().unwrap();
+            records.clone()
+        };
+
+        let count = records_clone.len();
         if count > 0 {
-            repository.save_events(session_id, &records).await?;
+            repository.save_events(session_id, &records_clone).await?;
         }
-        
+
         Ok(count)
     }
     

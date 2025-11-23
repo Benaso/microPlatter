@@ -1,7 +1,7 @@
 use crate::models::{Action, MouseButton};
 use crate::repositories::SessionRepository;
-use crate::error::AppResult;
-use enigo::*;
+use crate::error::{AppError, AppResult};
+use enigo::{Enigo, Button as EnigoButton, Settings, Coordinate, Direction, Axis, Mouse, Keyboard};
 use std::time::{Duration, Instant};
 
 pub struct PlayerService;
@@ -21,7 +21,9 @@ impl PlayerService {
         println!("Loading {} events, playback will begin in 3 seconds...", records.len());
         std::thread::sleep(Duration::from_secs(3));
 
-        let mut enigo = Enigo::new();
+    // construct Enigo with default settings (platform init may return Result)
+    let settings = Settings::default();
+    let mut enigo = Enigo::new(&settings).map_err(|e| AppError::PlaybackError(format!("Enigo init failed: {}", e)))?;
         let mut last_ts = records[0].timestamp_ms;
         let start = Instant::now();
 
@@ -44,37 +46,38 @@ impl PlayerService {
     fn execute_action(enigo: &mut Enigo, action: &Action) {
         match action {
             Action::MouseMove { x, y } => {
-                enigo.mouse_move_to(*x, *y);
+                // use absolute coordinates
+                let _ = enigo.move_mouse(*x, *y, Coordinate::Abs);
             }
             Action::MouseDown { button, .. } => {
                 let btn = Self::convert_button(button);
-                enigo.mouse_down(btn);
+                let _ = enigo.button(btn, Direction::Press);
             }
             Action::MouseUp { button, .. } => {
                 let btn = Self::convert_button(button);
-                enigo.mouse_up(btn);
+                let _ = enigo.button(btn, Direction::Release);
             }
             Action::Wheel { delta_x, delta_y, .. } => {
                 if *delta_y != 0 {
-                    enigo.mouse_scroll_y(*delta_y);
+                    let _ = enigo.scroll(*delta_y, Axis::Vertical);
                 }
                 if *delta_x != 0 {
-                    enigo.mouse_scroll_x(*delta_x);
+                    let _ = enigo.scroll(*delta_x, Axis::Horizontal);
                 }
             }
             Action::KeyPress { key } => {
                 if let Some(ch) = Self::extract_char(key) {
-                    enigo.key_sequence(&ch.to_string());
+                    let _ = enigo.text(&ch.to_string());
                 }
             }
         }
     }
     
-    fn convert_button(button: &MouseButton) -> enigo::MouseButton {
+    fn convert_button(button: &MouseButton) -> EnigoButton {
         match button {
-            MouseButton::Left => enigo::MouseButton::Left,
-            MouseButton::Right => enigo::MouseButton::Right,
-            MouseButton::Middle => enigo::MouseButton::Middle,
+            MouseButton::Left => EnigoButton::Left,
+            MouseButton::Right => EnigoButton::Right,
+            MouseButton::Middle => EnigoButton::Middle,
         }
     }
     

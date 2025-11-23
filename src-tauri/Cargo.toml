@@ -26,18 +26,19 @@ anyhow = "1"
 rdev = "0.5"
 enigo = "0.2"
 lazy_static = "1.4"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
+thiserror = "1"
 
 # SQLite
 rusqlite = { version = "0.31", features = ["bundled"], optional = true }
 
 # PostgreSQL
 tokio-postgres = { version = "0.7", optional = true }
-tokio = { version = "1", features = ["full"], optional = true }
+tokio = { version = "1", features = ["full"] }
 deadpool-postgres = { version = "0.12", optional = true }
 
 [features]
 default = ["sqlite"]
 sqlite = ["dep:rusqlite"]
-postgres = ["dep:tokio-postgres", "dep:tokio", "dep:deadpool-postgres"]
+postgres = ["dep:tokio-postgres", "dep:deadpool-postgres"]
