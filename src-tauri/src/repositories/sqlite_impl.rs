@@ -1,5 +1,5 @@
 use super::SessionRepository;
-use crate::models::{EventRecord, Session, SessionInfo};
+use crate::models::{EventRecord, Session};
 use crate::error::{AppError, AppResult};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -16,8 +16,7 @@ impl SqliteSessionRepository {
             std::fs::create_dir_all(parent)?;
         }
         
-        let conn = Connection::open(db_path)
-            .map_err(|e| AppError::Database(e.into()))?;
+        let conn = Connection::open(db_path)?;
         
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -39,7 +38,7 @@ impl SessionRepository for SqliteSessionRepository {
                 event_count INTEGER DEFAULT 0
             )",
             [],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         conn.execute(
             "CREATE TABLE IF NOT EXISTS events (
@@ -51,18 +50,18 @@ impl SessionRepository for SqliteSessionRepository {
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             )",
             [],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id)",
             [],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_timestamp 
              ON events(session_id, timestamp_ms)",
             [],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         Ok(())
     }
@@ -74,7 +73,7 @@ impl SessionRepository for SqliteSessionRepository {
         conn.execute(
             "INSERT INTO sessions (name, description, created_at) VALUES (?1, ?2, ?3)",
             params![name, description, created_at],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         Ok(conn.last_insert_rowid())
     }
@@ -84,48 +83,50 @@ impl SessionRepository for SqliteSessionRepository {
         let mut stmt = conn.prepare(
             "SELECT id, name, description, created_at, event_count 
              FROM sessions WHERE id = ?1"
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
-        let mut rows = stmt.query([session_id])
-            .map_err(|e| AppError::Database(e.into()))?;
+        let mut rows = stmt.query([session_id])?;
         
-        if let Some(row) = rows.next().map_err(|e| AppError::Database(e.into()))? {
-            let created_at_str: String = row.get(3)
-                .map_err(|e| AppError::Database(e.into()))?;
+        if let Some(row) = rows.next()? {
+            let created_at_str: String = row.get(3)?;
             let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
                 .map_err(|e| AppError::Database(e.into()))?
                 .with_timezone(&Utc);
             
             Ok(Some(Session {
-                id: row.get(0).map_err(|e| AppError::Database(e.into()))?,
-                name: row.get(1).map_err(|e| AppError::Database(e.into()))?,
-                description: row.get(2).map_err(|e| AppError::Database(e.into()))?,
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
                 created_at,
-                event_count: row.get(4).map_err(|e| AppError::Database(e.into()))?,
+                event_count: row.get(4)?,
             }))
         } else {
             Ok(None)
         }
     }
     
-    async fn list_sessions(&self) -> AppResult<Vec<SessionInfo>> {
+    async fn list_sessions(&self) -> AppResult<Vec<Session>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, name, description, created_at, event_count 
              FROM sessions ORDER BY created_at DESC"
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         let sessions = stmt.query_map([], |row| {
-            Ok(SessionInfo {
+            let created_at_str: String = row.get(3)?;
+            let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?
+                .with_timezone(&Utc);
+            
+            Ok(Session {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 description: row.get(2)?,
-                created_at: row.get(3)?,
+                created_at,
                 event_count: row.get(4)?,
             })
-        }).map_err(|e| AppError::Database(e.into()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| AppError::Database(e.into()))?;
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
         
         Ok(sessions)
     }
@@ -140,21 +141,19 @@ impl SessionRepository for SqliteSessionRepository {
         conn.execute(
             "UPDATE sessions SET name = ?1, description = ?2 WHERE id = ?3",
             params![name, description, session_id],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         Ok(())
     }
     
     async fn delete_session(&self, session_id: i64) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM sessions WHERE id = ?1", [session_id])
-            .map_err(|e| AppError::Database(e.into()))?;
+        conn.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
         Ok(())
     }
     
     async fn save_events(&self, session_id: i64, events: &[EventRecord]) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
-        let tx = conn.unchecked_transaction()
-            .map_err(|e| AppError::Database(e.into()))?;
+        let tx = conn.unchecked_transaction()?;
         
         for event in events {
             let action_type = event.action.action_type();
@@ -164,15 +163,15 @@ impl SessionRepository for SqliteSessionRepository {
                 "INSERT INTO events (session_id, timestamp_ms, action_type, action_data) 
                  VALUES (?1, ?2, ?3, ?4)",
                 params![session_id, event.timestamp_ms as i64, action_type, action_data],
-            ).map_err(|e| AppError::Database(e.into()))?;
+            )?;
         }
         
         tx.execute(
             "UPDATE sessions SET event_count = ?1 WHERE id = ?2",
             params![events.len(), session_id],
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
-        tx.commit().map_err(|e| AppError::Database(e.into()))?;
+        tx.commit()?;
         Ok(())
     }
     
@@ -181,16 +180,15 @@ impl SessionRepository for SqliteSessionRepository {
         let mut stmt = conn.prepare(
             "SELECT id, timestamp_ms, action_data FROM events 
              WHERE session_id = ?1 ORDER BY timestamp_ms ASC"
-        ).map_err(|e| AppError::Database(e.into()))?;
+        )?;
         
         let events = stmt.query_map([session_id], |row| {
             let id: i64 = row.get(0)?;
             let timestamp_ms: i64 = row.get(1)?;
             let action_data: String = row.get(2)?;
             Ok((id, timestamp_ms, action_data))
-        }).map_err(|e| AppError::Database(e.into()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| AppError::Database(e.into()))?;
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
         
         let mut records = Vec::new();
         for (id, timestamp_ms, action_data) in events {

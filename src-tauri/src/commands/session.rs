@@ -1,34 +1,30 @@
 use crate::state::AppState;
-use crate::models::SessionInfo;
+use crate::models::SessionResponse;
 use tauri::State;
 
 #[tauri::command]
 pub async fn list_sessions(
     state: State<'_, AppState>,
-) -> Result<Vec<SessionInfo>, String> {
+) -> Result<Vec<SessionResponse>, String> {
     let repository = state.repository.lock().await;
-    repository.list_sessions()
+    let sessions = repository.list_sessions()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    
+    Ok(sessions.into_iter().map(SessionResponse::from).collect())
 }
 
 #[tauri::command]
 pub async fn get_session(
     state: State<'_, AppState>,
     session_id: i64,
-) -> Result<Option<SessionInfo>, String> {
+) -> Result<Option<SessionResponse>, String> {
     let repository = state.repository.lock().await;
     let session = repository.get_session(session_id)
         .await
         .map_err(|e| e.to_string())?;
     
-    Ok(session.map(|s| SessionInfo {
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        created_at: s.created_at.to_rfc3339(),
-        event_count: s.event_count,
-    }))
+    Ok(session.map(SessionResponse::from))
 }
 
 #[tauri::command]

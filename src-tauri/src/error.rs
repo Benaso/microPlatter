@@ -4,8 +4,6 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] anyhow::Error),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
     
     #[error("Already recording")]
     AlreadyRecording,
@@ -34,5 +32,19 @@ pub type AppResult<T> = Result<T, AppError>;
 impl From<AppError> for String {
     fn from(err: AppError) -> String {
         err.to_string()
+    }
+}
+
+// 从 rusqlite::Error 转换
+impl From<rusqlite::Error> for AppError {
+    fn from(err: rusqlite::Error) -> Self {
+        AppError::Database(err.into())
+    }
+}
+
+// Allow using `?` with std::io::Error where AppError is expected
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::Database(err.into())
     }
 }

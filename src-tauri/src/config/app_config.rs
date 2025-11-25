@@ -21,11 +21,11 @@ pub enum DatabaseConfig {
 impl AppConfig {
     pub fn load_from_env(app_handle: &tauri::AppHandle) -> Self {
         // 从环境变量读取数据库配置
-    if let Ok(_pg_conn) = std::env::var("DATABASE_URL") {
+        if let Ok(pg_conn) = std::env::var("DATABASE_URL") {
             #[cfg(feature = "postgres")]
             return AppConfig {
                 database: DatabaseConfig::PostgreSQL {
-            connection_string: _pg_conn,
+                    connection_string: pg_conn,
                 },
             };
         }

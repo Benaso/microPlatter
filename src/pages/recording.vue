@@ -4,14 +4,22 @@
       <el-container class="header-content">
         <el-aside width="400px" class="button-area">
           
-          <el-button class="start-button">  
+          <el-button 
+            class="start-button"
+            @click="onStartRecording"
+            :disabled="isRecording"
+          >
             <span class="button-text">Start Recording</span>
-            <img src="../assets/startlogo.png" alt="startlogo logo" class="button-logo">
+            <img src="../assets/startlogo.png" class="button-logo">
           </el-button>
-          
-          <el-button class="stop-button">
+
+          <el-button 
+            class="stop-button"
+            @click="onStopRecording"
+            :disabled="!isRecording"
+          >
             <span class="button-text">Stop Recording</span>
-            <img src="../assets/stoplogo.png" alt="stoplogo logo" class="button-logo">
+            <img src="../assets/stoplogo.png" class="button-logo">
           </el-button>
           
         </el-aside>
@@ -77,180 +85,165 @@
 </template>
 
 <script>
-import * as echarts from 'echarts'; 
-import { Search } from '@element-plus/icons-vue' 
+import * as echarts from 'echarts'
+import { invoke } from '@tauri-apps/api/core'
+import { Search } from '@element-plus/icons-vue'
 
-export default { 
+export default {
   name: 'RecordingDashboard',
-  components: {
-    Search 
-  },
+  components: { Search },
+
   data() {
     return {
-      isReminderVisible: false, 
-      reminderTimeout: null,    
-      searchQuery: '', // 搜索内容
-      tableData: [{
-        date: '2016-05-02',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-04',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-01',
-        name: '张三丰',
-        comment: '记录开始',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '李四',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }, {
-        date: '2016-05-03',
-        name: '王小虎',
-        comment: '一些评论',
-        option: '操作'
-      }]
-    };
+      isRecording: false,     // ← 新增：按钮状态
+      isReminderVisible: false,
+      reminderTimeout: null,
+      searchQuery: '',
+      tableData: [
+        { date: '2016-05-02', name: '王小虎', comment: '一些评论', option: '操作' },
+        { date: '2016-05-04', name: '王小虎', comment: '一些评论', option: '操作' },
+        { date: '2016-05-01', name: '张三丰', comment: '记录开始', option: '操作' }
+      ]
+    }
   },
+
   computed: {
     filteredTableData() {
-      if (!this.searchQuery) {
-        return this.tableData;
-      }
-      const query = this.searchQuery.toLowerCase();
-      return this.tableData.filter(item => {
-        return item.name.toLowerCase().includes(query) ||
-               item.comment.toLowerCase().includes(query);
-      });
+      if (!this.searchQuery) return this.tableData
+      const query = this.searchQuery.toLowerCase()
+      return this.tableData.filter(item =>
+        item.name.toLowerCase().includes(query) ||
+        item.comment.toLowerCase().includes(query)
+      )
     }
   },
+
   mounted() {
-    this.initChart();
+    this.initChart()
   },
+
   beforeUnmount() {
-    clearTimeout(this.reminderTimeout); 
+    clearTimeout(this.reminderTimeout)
     if (this._myChart) {
-      window.removeEventListener('resize', () => this._myChart.resize());
-      this._myChart.dispose();
-      this._myChart = null;
+      window.removeEventListener('resize', () => this._myChart.resize())
+      this._myChart.dispose()
+      this._myChart = null
     }
   },
+
   methods: {
-    tableRowClassName({row, rowIndex}) {
-      if (rowIndex % 3 === 1) { 
-        return 'warning-row';
-      } else if (rowIndex % 3 === 2) { 
-        return 'success-row';
+    /* -----------------------------------------
+       核心：调用 Tauri 后端 Rust API
+    ------------------------------------------*/
+
+    async onStartRecording() {
+      try {
+        this.isRecording = true
+        const sessionName = "New Session"
+        const sessionId = await invoke("start_recording", {
+          sessionName,
+          description: "Started from UI"
+        })
+        console.log("Start recording => sessionId =", sessionId)
+      } catch (e) {
+        console.error("Start recording error:", e)
+        this.isRecording = false
       }
-      return '';
     },
+
+    async onStopRecording() {
+      try {
+        const result = await invoke("stop_recording")
+        console.log("Stop recording =>", result)
+      } catch (e) {
+        console.error("Stop recording error:", e)
+      } finally {
+        this.isRecording = false
+      }
+    },
+
+    /* -----------------------------------------
+       表格样式、搜索、小提示
+    ------------------------------------------*/
+    tableRowClassName({ rowIndex }) {
+      if (rowIndex % 3 === 1) return 'warning-row'
+      if (rowIndex % 3 === 2) return 'success-row'
+      return ''
+    },
+
     showReminder() {
-      clearTimeout(this.reminderTimeout);
-      this.isReminderVisible = true;
+      clearTimeout(this.reminderTimeout)
+      this.isReminderVisible = true
       this.reminderTimeout = setTimeout(() => {
-        this.isReminderVisible = false;
-      }, 10000); 
+        this.isReminderVisible = false
+      }, 10000)
     },
+
     hideReminder() {
-      clearTimeout(this.reminderTimeout);
-      this.isReminderVisible = false;
+      clearTimeout(this.reminderTimeout)
+      this.isReminderVisible = false
     },
+
     closeReminder() {
-      clearTimeout(this.reminderTimeout);
-      this.isReminderVisible = false;
+      clearTimeout(this.reminderTimeout)
+      this.isReminderVisible = false
     },
+
     initChart() {
-      const myChart = echarts.init(this.$refs.chartContainer);
+      const myChart = echarts.init(this.$refs.chartContainer)
+
       const option = {
         series: [
           {
             type: 'gauge',
             startAngle: 180,
             endAngle: 0,
-            center: ['50%', '65%'], 
-            radius: '100%', 
+            center: ['50%', '65%'],
+            radius: '100%',
             min: 0,
-            max: 200, 
-            splitNumber: 4, 
+            max: 200,
+            // Reduce visual ticks to a single split so the gauge appears clean
+            splitNumber: 1,
             pointer: { show: false },
             progress: {
               show: true,
               overlap: false,
-              roundCap: true, 
-              width: 15, 
-              itemStyle: { color: '#FFA726' },
+              roundCap: true,
+              width: 15,
+              itemStyle: { color: '#FFA726' }
             },
             axisLine: {
               lineStyle: {
-                width: 15, 
-                color: [ 
-                  [0.33, '#EF5350'], 
-                  [0.66, '#FFD54F'], 
-                  [1, '#A5D6A7']      
-                ],
-                opacity: 0.3 
+                width: 15,
+                // Single continuous color stop prevents segmented tick visuals
+                color: [[1, '#A5D6A7']],
+                opacity: 0.3
               }
             },
             axisTick: { show: false },
             splitLine: { show: false },
             axisLabel: { show: false },
             detail: {
-              fontSize: 40, 
-              offsetCenter: [0, '-25%'], 
+              fontSize: 40,
+              offsetCenter: [0, '-25%'],
               valueAnimation: true,
-              formatter: function (value) { return value + ''; },
-              color: '#192038' 
+              formatter: function (value) { return value + '' },
+              color: '#192038'
             },
             title: {
-              offsetCenter: [0, '20%'], 
+              offsetCenter: [0, '20%'],
               fontSize: 16,
-              color: '#666', 
-              show: true 
+              color: '#666',
+              show: true
             },
-            data: [
-              {
-                value: 130, 
-                name: 'Recording Distribution' 
-              }
-            ]
+            data: [{ value: 130, name: 'Recording Distribution' }]
           }
         ]
-      };
-      
-      myChart.setOption(option);
-      window.addEventListener('resize', () => myChart.resize());
-      this._myChart = myChart;
+      }
+
+      myChart.setOption(option)
+      window.addEventListener('resize', () => myChart.resize())
+      this._myChart = myChart
     }
   }
 }

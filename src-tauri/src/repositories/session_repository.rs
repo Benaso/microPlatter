@@ -1,4 +1,4 @@
-use crate::models::{EventRecord, Session, SessionInfo};
+use crate::models::{EventRecord, Session};
 use crate::error::AppResult;
 use async_trait::async_trait;
 
@@ -14,7 +14,7 @@ pub trait SessionRepository: Send + Sync {
     async fn get_session(&self, session_id: i64) -> AppResult<Option<Session>>;
     
     /// 列出所有会话
-    async fn list_sessions(&self) -> AppResult<Vec<SessionInfo>>;
+    async fn list_sessions(&self) -> AppResult<Vec<Session>>;
     
     /// 更新会话
     async fn update_session(

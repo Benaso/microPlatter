@@ -3,7 +3,9 @@ use super::Action;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EventRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<i64>,
     pub timestamp_ms: u128,
     pub action: Action,

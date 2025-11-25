@@ -1,8 +1,7 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, DatabaseConfig};
 use crate::repositories::{SessionRepository, SqliteSessionRepository};
 #[cfg(feature = "postgres")]
 use crate::repositories::PostgresSessionRepository;
-use crate::config::DatabaseConfig;
 use crate::error::AppResult;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;

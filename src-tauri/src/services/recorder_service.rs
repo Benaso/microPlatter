@@ -3,8 +3,8 @@ use crate::repositories::SessionRepository;
 use crate::error::AppResult;
 use rdev::{listen, Event, EventType};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use tauri::Emitter;
+use std::time::Instant;
 
 lazy_static::lazy_static! {
     static ref GLOBAL_RECORDS: Arc<Mutex<Vec<EventRecord>>> = Arc::new(Mutex::new(Vec::new()));
@@ -51,7 +51,7 @@ impl RecorderService {
                 }
                 EventType::ButtonPress(btn) => {
                     let (x, y) = *last_pos.lock().unwrap();
-                    let button = Self::convert_button(&btn);
+                    let button = MouseButton::from_rdev(&btn);
                     
                     recs.push(EventRecord::new(
                         elapsed,
@@ -63,7 +63,7 @@ impl RecorderService {
                 }
                 EventType::ButtonRelease(btn) => {
                     let (x, y) = *last_pos.lock().unwrap();
-                    let button = Self::convert_button(&btn);
+                    let button = MouseButton::from_rdev(&btn);
                     
                     recs.push(EventRecord::new(
                         elapsed,
@@ -117,26 +117,17 @@ impl RecorderService {
         session_id: i64,
         repository: &dyn SessionRepository,
     ) -> AppResult<usize> {
-        // Clone the records while holding the lock, then drop the lock before awaiting.
-        let records_clone = {
-            let records = GLOBAL_RECORDS.lock().unwrap();
-            records.clone()
+        // Clone records so we don't hold the MutexGuard across an await
+        let records = {
+            let r = GLOBAL_RECORDS.lock().unwrap();
+            r.clone()
         };
+        let count = records.len();
 
-        let count = records_clone.len();
         if count > 0 {
-            repository.save_events(session_id, &records_clone).await?;
+            repository.save_events(session_id, &records).await?;
         }
 
         Ok(count)
-    }
-    
-    fn convert_button(btn: &rdev::Button) -> MouseButton {
-        match btn {
-            rdev::Button::Left => MouseButton::Left,
-            rdev::Button::Right => MouseButton::Right,
-            rdev::Button::Middle => MouseButton::Middle,
-            _ => MouseButton::Left,
-        }
     }
 }
