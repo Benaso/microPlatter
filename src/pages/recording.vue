@@ -35,7 +35,7 @@
             <div class="reminder-content">
               <ul>
                 <li><span class="color-dot red-dot"></span>Over 5 minutes</li>
-                <li><span class="color-dot yellow-dot"></span>1–5 minutes</li>
+                <li><span class="color-dot yellow-dot"></span>1~5 minutes</li>
                 <li><span class="color-dot green-dot"></span>Under 1 minute</li>
               </ul>
             </div>
@@ -62,21 +62,47 @@
           <el-table-column
             prop="date"
             label="DATE"
+            align="center"
             width="180">
           </el-table-column>
           <el-table-column
             prop="name"
             label="NAME"
+            align="center"
             width="180">
           </el-table-column>
           <el-table-column
             prop="comment"
             label="COMMENT"
+            align="center"
             width="200">
           </el-table-column>
           <el-table-column
             prop="option"
-            label="OPTION">
+            label="OPTION"
+            align="center">
+            <template v-slot:default="scope">
+            <div style="display: flex; justify-content: center; align-items: center;"> 
+              <el-button 
+                @click="handleJsonClick(scope.row)" 
+                type="text" 
+                size="small"
+                style="padding: 0; margin-right: 10px;">
+                <img 
+                  src="../assets/jsonlogo.png"  alt="View JSON" 
+                  style="width: 28px; height: 28px; vertical-align: middle;">
+              </el-button>
+              <el-button 
+                @click="handleMoreClick(scope.row)" 
+                type="text" 
+                size="small"
+                style="padding: 0;">
+                <img 
+                  src="../assets/selectionButton.png"  alt="More Options" 
+                  style="width: 6px; height: 24px; vertical-align: middle;">
+              </el-button>
+            </div>
+          </template>
           </el-table-column>
         </el-table>
       </div>

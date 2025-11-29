@@ -31,12 +31,8 @@ impl AppConfig {
         }
         
         // 默认使用 SQLite
-        let app_data_dir = app_handle
-            .path()
-            .app_data_dir()
-            .expect("Failed to get app data dir");
-        
-        let db_path = app_data_dir.join("recordings.db");
+        let current_dir = std::env::current_dir().expect("Failed to get current directory");
+        let db_path = current_dir.join("recordings.db");
         
         AppConfig {
             database: DatabaseConfig::SQLite {
