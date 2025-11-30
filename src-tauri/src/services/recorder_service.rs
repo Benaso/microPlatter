@@ -1,14 +1,14 @@
+use crate::error::AppResult;
 use crate::models::{Action, EventRecord, MouseButton};
 use crate::repositories::SessionRepository;
-use crate::error::AppResult;
 use rdev::{listen, Event, EventType};
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
-
-lazy_static::lazy_static! {
-    static ref GLOBAL_RECORDS: Arc<Mutex<Vec<EventRecord>>> = Arc::new(Mutex::new(Vec::new()));
-}
+use tauri::Emitter;
+use tokio::time::{sleep, Duration};
+use crossbeam_channel::unbounded;
+use tokio::sync::Mutex as TokioMutex;
 
 pub struct RecorderService;
 
@@ -16,118 +16,153 @@ impl RecorderService {
     pub fn start_recording(
         is_recording: Arc<Mutex<bool>>,
         app_handle: tauri::AppHandle,
+        // pass the shared repository mutex so background async task can lock it
+        repository: Arc<TokioMutex<Box<dyn SessionRepository>>>,
+        session_id: i64,
+        in_flight: Option<Arc<AtomicUsize>>,
     ) -> AppResult<()> {
-        // 清空之前的记录
-        {
-            let mut records = GLOBAL_RECORDS.lock().unwrap();
-            records.clear();
-        }
-        
         let start = Instant::now();
         let last_pos = Arc::new(Mutex::new((-1, -1)));
-        
-        let callback = move |event: Event| {
-            let is_rec = is_recording.lock().unwrap();
-            if !*is_rec {
-                return;
-            }
-            drop(is_rec);
-            
-            let elapsed = start.elapsed().as_millis();
-            let mut recs = GLOBAL_RECORDS.lock().unwrap();
-            
-            match event.event_type {
-                EventType::MouseMove { x, y } => {
-                    let mut pos = last_pos.lock().unwrap();
-                    *pos = (x as i32, y as i32);
-                    
-                    recs.push(EventRecord::new(
-                        elapsed,
-                        Action::MouseMove { x: x as i32, y: y as i32 },
-                    ));
-                    
-                    let _ = app_handle.emit("recording-event", 
-                        format!("MouseMove: ({}, {})", x, y));
+    // channel 用作生产者/消费者队列，callback 只 push 到 tx，异步任务从 rx 读取并批量保存
+    let (tx, rx) = unbounded::<EventRecord>();
+
+        // 启动一个 tokio 任务定期批量写入数据库
+        {
+            let repository = repository.clone();
+            let in_flight_bg = in_flight.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    sleep(Duration::from_millis(500)).await;
+
+                    // 批量拉取所有当前在通道里的事件
+                    let mut batch = Vec::new();
+                    while let Ok(ev) = rx.try_recv() {
+                        batch.push(ev);
+                    }
+
+                    if !batch.is_empty() {
+                        // lock repository inside async context
+                        let repo = repository.lock().await;
+                        if let Err(e) = repo.save_events(session_id, &batch).await {
+                            eprintln!("Failed to save events: {:?}", e);
+                        } else {
+                            if let Some(counter) = in_flight_bg.as_ref() {
+                                counter.fetch_sub(batch.len(), Ordering::SeqCst);
+                            }
+                        }
+                    }
                 }
-                EventType::ButtonPress(btn) => {
-                    let (x, y) = *last_pos.lock().unwrap();
-                    let button = MouseButton::from_rdev(&btn);
-                    
-                    recs.push(EventRecord::new(
-                        elapsed,
-                        Action::MouseDown { button, x, y },
-                    ));
-                    
-                    let _ = app_handle.emit("recording-event", 
-                        format!("MouseDown: {:?}", btn));
-                }
-                EventType::ButtonRelease(btn) => {
-                    let (x, y) = *last_pos.lock().unwrap();
-                    let button = MouseButton::from_rdev(&btn);
-                    
-                    recs.push(EventRecord::new(
-                        elapsed,
-                        Action::MouseUp { button, x, y },
-                    ));
-                    
-                    let _ = app_handle.emit("recording-event", 
-                        format!("MouseUp: {:?}", btn));
-                }
-                EventType::Wheel { delta_x, delta_y } => {
-                    let (x, y) = *last_pos.lock().unwrap();
-                    
-                    recs.push(EventRecord::new(
-                        elapsed,
-                        Action::Wheel {
-                            delta_x: delta_x as i32,
-                            delta_y: delta_y as i32,
-                            x,
-                            y,
-                        },
-                    ));
-                    
-                    let _ = app_handle.emit("recording-event", 
-                        format!("Wheel: ({}, {})", delta_x, delta_y));
-                }
-                EventType::KeyPress(key) => {
-                    recs.push(EventRecord::new(
-                        elapsed,
-                        Action::KeyPress {
-                            key: format!("{:?}", key),
-                        },
-                    ));
-                    
-                    let _ = app_handle.emit("recording-event", 
-                        format!("KeyPress: {:?}", key));
-                }
-                _ => {}
-            };
-            
-            let _ = app_handle.emit("event-count", recs.len());
-        };
-        
-        if let Err(err) = listen(callback) {
-            eprintln!("Listening failed: {:?}", err);
+            });
         }
-        
+
+    let is_recording_cb = is_recording.clone();
+    let tx_cb = tx.clone();
+    let last_pos_cb = last_pos.clone();
+    let in_flight_thread = in_flight.clone();
+
+        std::thread::spawn(move || {
+            let callback = move |event: rdev::Event| {
+                let is_rec = *is_recording_cb.lock().unwrap();
+                if !is_rec {
+                    return;
+                }
+
+                let elapsed = start.elapsed().as_millis();
+
+                // 先读取位置信息（避免双锁交叉）
+                let (x, y) = *last_pos_cb.lock().unwrap();
+
+                match event.event_type {
+                    EventType::MouseMove { x, y } => {
+                        *last_pos_cb.lock().unwrap() = (x as i32, y as i32);
+                        let ev = EventRecord::new(
+                            elapsed,
+                            Action::MouseMove {
+                                x: x as i32,
+                                y: y as i32,
+                            },
+                        );
+                        if tx_cb.send(ev).is_ok() {
+                            if let Some(counter) = in_flight_thread.as_ref() {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    EventType::ButtonPress(btn) => {
+                        let button = MouseButton::from_rdev(&btn);
+
+                        let ev = EventRecord::new(elapsed, Action::MouseDown { button, x, y });
+                        if tx_cb.send(ev).is_ok() {
+                            if let Some(counter) = in_flight_thread.as_ref() {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    EventType::ButtonRelease(btn) => {
+                        let button = MouseButton::from_rdev(&btn);
+
+                        let ev = EventRecord::new(elapsed, Action::MouseUp { button, x, y });
+                        if tx_cb.send(ev).is_ok() {
+                            if let Some(counter) = in_flight_thread.as_ref() {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    EventType::Wheel { delta_x, delta_y } => {
+                        let ev = EventRecord::new(
+                            elapsed,
+                            Action::Wheel {
+                                delta_x: delta_x as i32,
+                                delta_y: delta_y as i32,
+                                x,
+                                y,
+                            },
+                        );
+                        if tx_cb.send(ev).is_ok() {
+                            if let Some(counter) = in_flight_thread.as_ref() {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    EventType::KeyPress(key) => {
+                        let ev = EventRecord::new(
+                            elapsed,
+                            Action::KeyPress {
+                                key: format!("{:?}", key),
+                            },
+                        );
+                        if tx_cb.send(ev).is_ok() {
+                            if let Some(counter) = in_flight.as_ref() {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    _ => {}
+                }
+
+                // 发当前未保存计数给前端
+                let count = in_flight_thread.as_ref().map(|c| c.load(Ordering::SeqCst)).unwrap_or(0usize);
+                let _ = app_handle.emit("event-count", count);
+            };
+
+            if let Err(err) = listen(callback) {
+                eprintln!("Listening failed: {:?}", err);
+            }
+        });
+
         Ok(())
     }
-    
+
     pub async fn save_recording(
-        session_id: i64,
-        repository: &dyn SessionRepository,
+        _session_id: i64,
+        _repository: &dyn SessionRepository,
     ) -> AppResult<usize> {
-        // Clone records so we don't hold the MutexGuard across an await
-        let records = {
-            let r = GLOBAL_RECORDS.lock().unwrap();
-            r.clone()
-        };
-        let count = records.len();
-
-        if count > 0 {
-            repository.save_events(session_id, &records).await?;
-        }
-
-        Ok(count)
+        Ok(0)
     }
 }

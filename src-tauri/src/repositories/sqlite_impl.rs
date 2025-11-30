@@ -1,5 +1,5 @@
 use super::SessionRepository;
-use crate::models::{EventRecord, Session};
+use crate::models::{EventRecord, Session, event};
 use crate::error::{AppError, AppResult};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -35,7 +35,8 @@ impl SessionRepository for SqliteSessionRepository {
                 name TEXT NOT NULL,
                 description TEXT,
                 created_at TEXT NOT NULL,
-                event_count INTEGER DEFAULT 0
+                event_count INTEGER DEFAULT 0,
+                time_cost float64 DEFAULT 0.0
             )",
             [],
         )?;
@@ -166,9 +167,26 @@ impl SessionRepository for SqliteSessionRepository {
             )?;
         }
         
+        // Compute time_cost for this batch (max timestamp in ms -> seconds)
+        let max_ts_ms = events.iter().map(|e| e.timestamp_ms).max().unwrap_or(0);
+        let batch_time_cost = (max_ts_ms as f64) / 1000.0;
+
+        // Read previous time_cost (if any) and take the max to support incremental batches
+        let prev_time_cost: f64 = match tx.query_row(
+            "SELECT time_cost FROM sessions WHERE id = ?1",
+            params![session_id],
+            |row| row.get(0),
+        ) {
+            Ok(v) => v,
+            Err(_) => 0.0,
+        };
+
+        let final_time_cost = if batch_time_cost > prev_time_cost { batch_time_cost } else { prev_time_cost };
+
+        // Increment event_count and update time_cost
         tx.execute(
-            "UPDATE sessions SET event_count = ?1 WHERE id = ?2",
-            params![events.len(), session_id],
+            "UPDATE sessions SET event_count = event_count + ?1, time_cost = ?2 WHERE id = ?3",
+            params![events.len() as i64, final_time_cost, session_id],
         )?;
         
         tx.commit()?;

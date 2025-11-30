@@ -35,7 +35,8 @@ impl SessionRepository for PostgresSessionRepository {
                 name TEXT NOT NULL,
                 description TEXT,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                event_count BIGINT DEFAULT 0
+                event_count BIGINT DEFAULT 0,
+                time_cost float64 DEFAULT 0.0
             )",
             &[],
         ).await.map_err(|e| AppError::Database(e.into()))?;

@@ -5,11 +5,14 @@ use crate::repositories::PostgresSessionRepository;
 use crate::error::AppResult;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
+use std::sync::atomic::AtomicUsize;
 
 pub struct AppState {
     pub is_recording: Arc<StdMutex<bool>>,
     pub current_session_id: Arc<StdMutex<Option<i64>>>,
     pub repository: Arc<TokioMutex<Box<dyn SessionRepository>>>,
+    // Optional counter exposed by recorder to indicate number of in-flight events
+    pub recorder_in_flight: Arc<TokioMutex<Option<Arc<AtomicUsize>>>>,
 }
 
 impl AppState {
@@ -21,6 +24,7 @@ impl AppState {
             is_recording: Arc::new(StdMutex::new(false)),
             current_session_id: Arc::new(StdMutex::new(None)),
             repository: Arc::new(TokioMutex::new(repository)),
+            recorder_in_flight: Arc::new(TokioMutex::new(None)),
         })
     }
     

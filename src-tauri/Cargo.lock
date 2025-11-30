@@ -2239,6 +2239,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "crossbeam-channel",
  "deadpool-postgres",
  "enigo",
  "lazy_static",

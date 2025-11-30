@@ -1,6 +1,6 @@
-use crate::state::AppState;
-use crate::services::{RecorderService, PlayerService};
 use crate::error::AppError;
+use crate::services::{PlayerService, RecorderService};
+use crate::state::AppState;
 use tauri::State;
 
 #[tauri::command]
@@ -33,11 +33,28 @@ pub async fn start_recording(
         let mut current_session = state.current_session_id.lock().unwrap();
         *current_session = Some(session_id);
     }
-    
+
     // 启动录制
     let is_recording_clone = state.is_recording.clone();
+    // 克隆 repository Arc<TokioMutex<..>> to pass into thread
+    let repository_for_thread = state.repository.clone();
+    let app_handle_clone = app_handle.clone();
+
+    // 创建并保存 in_flight 计数器到 state，以便 stop_recording 能等待
+    let in_flight_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    {
+        let mut slot = state.recorder_in_flight.lock().await;
+        *slot = Some(in_flight_counter.clone());
+    }
+
     std::thread::spawn(move || {
-        if let Err(e) = RecorderService::start_recording(is_recording_clone, app_handle) {
+        if let Err(e) = RecorderService::start_recording(
+            is_recording_clone,
+            app_handle_clone,
+            repository_for_thread,
+            session_id,
+            Some(in_flight_counter),
+        ) {
             eprintln!("Recording error: {:?}", e);
         }
     });
@@ -47,9 +64,7 @@ pub async fn start_recording(
 }
 
 #[tauri::command]
-pub async fn stop_recording(
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
     {
         let mut is_recording = state.is_recording.lock().unwrap();
         if !*is_recording {
@@ -59,14 +74,23 @@ pub async fn stop_recording(
     }
 
     // 等待一下确保所有事件都被记录
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    
+    // 等待后台把已发送事件写完（最多等 3 秒）
+    if let Some(counter) = state.recorder_in_flight.lock().await.as_ref() {
+        let start = std::time::Instant::now();
+        while counter.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            if start.elapsed().as_secs() >= 3 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     // 获取当前会话ID
     let session_id = {
         let current_session = state.current_session_id.lock().unwrap();
         current_session.ok_or(AppError::NoActiveSession.to_string())?
     };
-    
+
     // 保存记录到数据库 (don't hold std guards across await)
     let count = {
         let repository = state.repository.lock().await;
@@ -74,11 +98,16 @@ pub async fn stop_recording(
             .await
             .map_err(|e| e.to_string())?
     };
-    
+
     // 清除当前会话
     {
         let mut current_session = state.current_session_id.lock().unwrap();
         *current_session = None;
+    }
+    // 清除 recorder_in_flight 插槽
+    {
+        let mut slot = state.recorder_in_flight.lock().await;
+        *slot = None;
     }
     println!("Saved {} events to session {}", count, session_id);
 
@@ -86,10 +115,7 @@ pub async fn stop_recording(
 }
 
 #[tauri::command]
-pub async fn play_recording(
-    state: State<'_, AppState>,
-    session_id: i64,
-) -> Result<String, String> {
+pub async fn play_recording(state: State<'_, AppState>, session_id: i64) -> Result<String, String> {
     let repository = state.repository.lock().await;
     PlayerService::play_session(session_id, &**repository)
         .await
@@ -98,9 +124,7 @@ pub async fn play_recording(
 }
 
 #[tauri::command]
-pub async fn get_recording_status(
-    state: State<'_, AppState>,
-) -> Result<bool, String> {
+pub async fn get_recording_status(state: State<'_, AppState>) -> Result<bool, String> {
     let is_recording = state.is_recording.lock().unwrap();
     Ok(*is_recording)
 }
