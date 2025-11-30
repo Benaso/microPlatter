@@ -1,14 +1,14 @@
 use crate::error::AppResult;
 use crate::models::{Action, EventRecord, MouseButton};
 use crate::repositories::SessionRepository;
+use crossbeam_channel::unbounded;
 use rdev::{listen, EventType};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::Emitter;
-use tokio::time::{sleep, Duration};
-use crossbeam_channel::unbounded;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::time::{sleep, Duration};
 
 pub struct RecorderService;
 
@@ -158,7 +158,10 @@ impl RecorderService {
                 }
 
                 // 发当前未保存计数给前端
-                let count = in_flight_thread.as_ref().map(|c| c.load(Ordering::SeqCst)).unwrap_or(0usize);
+                let count = in_flight_thread
+                    .as_ref()
+                    .map(|c| c.load(Ordering::SeqCst))
+                    .unwrap_or(0usize);
                 let _ = app_handle.emit("event-count", count);
             };
 
