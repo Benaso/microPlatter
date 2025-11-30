@@ -3,7 +3,6 @@
     <el-header class="header-section">
       <el-container class="header-content">
         <el-aside width="400px" class="button-area">
-          
           <el-button 
             class="start-button"
             @click="onStartRecording"
@@ -13,7 +12,7 @@
             <img src="../assets/startlogo.png" class="button-logo">
           </el-button>
 
-          <el-button 
+          <el-button
             class="stop-button"
             @click="onStopRecording"
             :disabled="!isRecording"
@@ -21,21 +20,21 @@
             <span class="button-text">Stop Recording</span>
             <img src="../assets/stoplogo.png" class="button-logo">
           </el-button>
-          
+
         </el-aside>
         
-        <el-main class="chart-area" @mouseenter="showReminder" @mouseleave="hideReminder">
+        <el-main class="chart-area" @mouseenter="showReminder" @mouseleave="startHideTimer">
           <div ref="chartContainer" class="chart-container"></div>
           
-          <div :class="['reminder-box', {'is-visible': isReminderVisible}]">
+          <div :class="['reminder-box', {'is-visible': isReminderVisible}]" @mouseenter="cancelHideTimer" @mouseleave="startHideTimer">
             <div class="reminder-header">
-              <span>Reminder:</span>
+              <span>Tip:</span>
               <button @click="closeReminder" class="close-button">×</button>
             </div>
             <div class="reminder-content">
               <ul>
-                <li><span class="color-dot red-dot"></span>Over 5 minutes</li>
-                <li><span class="color-dot yellow-dot"></span>1~5 minutes</li>
+                <li><span class="color-dot red-dot"></span>2~3 minutes</li>
+                <li><span class="color-dot yellow-dot"></span>1~2 minutes</li>
                 <li><span class="color-dot green-dot"></span>Under 1 minute</li>
               </ul>
             </div>
@@ -83,23 +82,12 @@
             align="center">
             <template v-slot:default="scope">
             <div style="display: flex; justify-content: center; align-items: center;"> 
-              <el-button 
-                @click="handleJsonClick(scope.row)" 
-                type="text" 
-                size="small"
-                style="padding: 0; margin-right: 10px;">
-                <img 
-                  src="../assets/jsonlogo.png"  alt="View JSON" 
-                  style="width: 28px; height: 28px; vertical-align: middle;">
-              </el-button>
-              <el-button 
-                @click="handleMoreClick(scope.row)" 
-                type="text" 
-                size="small"
-                style="padding: 0;">
-                <img 
-                  src="../assets/selectionButton.png"  alt="More Options" 
-                  style="width: 6px; height: 24px; vertical-align: middle;">
+              <el-button
+                class="action-button"
+                @click.stop="onPlay(scope.row)"
+                :disabled="isRecording"
+              >
+                Play
               </el-button>
             </div>
           </template>
@@ -121,14 +109,17 @@ export default {
 
   data() {
     return {
-      isRecording: false,     // ← 新增：按钮状态
+      isRecording: false,    
       isReminderVisible: false,
       reminderTimeout: null,
-      searchQuery: '',
-      tableData: [
-        { date: '2016-05-02', name: '王小虎', comment: '一些评论', option: '操作' },
-        { date: '2016-05-04', name: '王小虎', comment: '一些评论', option: '操作' },
-        { date: '2016-05-01', name: '张三丰', comment: '记录开始', option: '操作' }
+  searchQuery: '',
+  tableData: [],
+  sessionCount: 0,
+  // time cost ranges used in the reminder box; each item maps to a color class
+      timeCostRanges: [
+        { label: '2~3 minutes', colorClass: 'red-dot' },
+        { label: '1~2 minutes', colorClass: 'yellow-dot' },
+        { label: 'Under 1 minute', colorClass: 'green-dot' }
       ]
     }
   },
@@ -145,7 +136,8 @@ export default {
   },
 
   mounted() {
-    this.initChart()
+  this.initChart()
+  this.loadSessions()
   },
 
   beforeUnmount() {
@@ -181,6 +173,8 @@ export default {
       try {
         const result = await invoke("stop_recording")
         console.log("Stop recording =>", result)
+  // reload sessions so the table reflects the newly stopped session
+  this.loadSessions()
       } catch (e) {
         console.error("Stop recording error:", e)
       } finally {
@@ -188,83 +182,119 @@ export default {
       }
     },
 
+    async onPlay(row) {
+      try {
+        const sessionId = row.sessionId || row.id || null
+        if (!sessionId) {
+          console.warn('No session id for row', row)
+          return
+        }
+        console.log('Invoking play_recording for session', sessionId)
+        const result = await invoke('play_recording', { sessionId })
+        console.log('Playback result:', result)
+      } catch (e) {
+        console.error('Play recording error:', e)
+      }
+    },
+
+    async loadSessions() {
+      try {
+        const sessions = await invoke('list_sessions')
+        // sessions is expected to be an array of { id, name, description, created_at, event_count }
+        this.tableData = (sessions || []).map(s => ({
+          sessionId: s.id,
+          date: s.created_at ? s.created_at.split('T')[0] : '',
+          name: s.name || '',
+          comment: s.description || '',
+          time_cost: s.time_cost || 0,
+          option: '操作'
+        }))
+
+        // update session count and refresh gauge + color distribution
+        this.sessionCount = this.tableData.length
+
+        // compute distribution counts
+        const greenCount = this.tableData.filter(r => r.time_cost > 0 && r.time_cost < 60).length
+        const yellowCount = this.tableData.filter(r => r.time_cost >= 60 && r.time_cost < 120).length
+        const redCount = this.tableData.filter(r => r.time_cost >= 120 && r.time_cost < 180).length
+        const total = greenCount + yellowCount + redCount
+
+        if (this._myChart) {
+          try {
+            if (total > 0) {
+              const barData = [greenCount, yellowCount, redCount]
+              this._myChart.setOption({ series: [{ data: barData, type: 'bar', itemStyle: { color: function(params) { return ['#43A047','#FFD54F','#EF5350'][params.dataIndex] } } }] })
+            } else {
+              // fallback: no sessions -> neutral single slice
+              this._myChart.setOption({ series: [{ data: [0,0,0], type: 'bar' }] })
+            }
+          } catch (e) {
+            console.warn('Failed to update gauge:', e)
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load sessions:', e)
+      }
+    },
+
     /* -----------------------------------------
        表格样式、搜索、小提示
     ------------------------------------------*/
-    tableRowClassName({ rowIndex }) {
-      if (rowIndex % 3 === 1) return 'warning-row'
-      if (rowIndex % 3 === 2) return 'success-row'
+    tableRowClassName({ row }) {
+      // compute class by time_cost in seconds
+      if (!row || typeof row.time_cost === 'undefined') return ''
+      const cls = this.timeCostClass(row.time_cost)
+      return cls
+    },
+
+    timeCostClass(time_cost) {
+      if (time_cost >= 120 && time_cost < 180) return 'time-cost-red'
+      if (time_cost >= 60 && time_cost < 120) return 'time-cost-yellow'
+      if (time_cost > 0 && time_cost < 60) return 'time-cost-green'
       return ''
     },
 
     showReminder() {
-      clearTimeout(this.reminderTimeout)
+      this.cancelHideTimer()
       this.isReminderVisible = true
+      this.startHideTimer()
+    },
+
+    // start a 3s hide timer (used on mouseleave)
+    startHideTimer(delay = 2000) {
+      this.cancelHideTimer()
       this.reminderTimeout = setTimeout(() => {
         this.isReminderVisible = false
-      }, 10000)
+        this.reminderTimeout = null
+      }, delay)
+    },
+
+    // cancel any pending hide timer (used on mouseenter)
+    cancelHideTimer() {
+      if (this.reminderTimeout) {
+        clearTimeout(this.reminderTimeout)
+        this.reminderTimeout = null
+      }
     },
 
     hideReminder() {
-      clearTimeout(this.reminderTimeout)
+      // immediate hide (used by close button)
+      this.cancelHideTimer()
       this.isReminderVisible = false
     },
 
     closeReminder() {
-      clearTimeout(this.reminderTimeout)
-      this.isReminderVisible = false
+      this.hideReminder()
     },
 
     initChart() {
       const myChart = echarts.init(this.$refs.chartContainer)
-
       const option = {
-        series: [
-          {
-            type: 'gauge',
-            startAngle: 180,
-            endAngle: 0,
-            center: ['50%', '65%'],
-            radius: '100%',
-            min: 0,
-            max: 200,
-            // Reduce visual ticks to a single split so the gauge appears clean
-            splitNumber: 1,
-            pointer: { show: false },
-            progress: {
-              show: true,
-              overlap: false,
-              roundCap: true,
-              width: 15,
-              itemStyle: { color: '#FFA726' }
-            },
-            axisLine: {
-              lineStyle: {
-                width: 15,
-                // Single continuous color stop prevents segmented tick visuals
-                color: [[1, '#A5D6A7']],
-                opacity: 0.3
-              }
-            },
-            axisTick: { show: false },
-            splitLine: { show: false },
-            axisLabel: { show: false },
-            detail: {
-              fontSize: 40,
-              offsetCenter: [0, '-25%'],
-              valueAnimation: true,
-              formatter: function (value) { return value + '' },
-              color: '#192038'
-            },
-            title: {
-              offsetCenter: [0, '20%'],
-              fontSize: 16,
-              color: '#666',
-              show: true
-            },
-            data: [{ value: 130, name: 'Recording Distribution' }]
-          }
-        ]
+        grid: { left: '6%', right: '6%', top: '6%', bottom: '2%', containLabel: true },
+        xAxis: { type: 'category', data: ['Green','Yellow','Red'], axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: '#6b7280' } },
+        yAxis: { type: 'value', axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: false }, axisLabel: { show: false } },
+        series: [ { data: [0,0,0], type: 'bar', itemStyle: { borderRadius: 6 }, emphasis: { focus: 'series' } } ],
+        tooltip: { trigger: 'axis' }
       }
 
       myChart.setOption(option)
@@ -289,13 +319,6 @@ export default {
 .el-table {
   box-sizing: border-box;
   max-width: 100%;
-}
-
-/* Prevent images from forcing horizontal overflow */
-.main-container :deep(img) {
-  max-width: 100%;
-  height: auto;
-  display: block;
 }
 
 /* Ensure table internals can shrink below content width when needed */
@@ -387,6 +410,22 @@ export default {
   object-fit: contain;
 }
 
+/* Action button used inside table rows (matches main buttons but smaller) */
+.action-button {
+  height: 36px;
+  min-width: 72px;
+  padding: 6px 12px;
+  margin: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white !important;
+  border: 1px solid #192038;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 14px;
+}
+
 
 /* ======================== D 区: 图表区域 (不变) ======================== */
 .chart-area {
@@ -408,60 +447,60 @@ export default {
 /* ======================== Reminder Box 样式 (不变) ======================== */
 .reminder-box {
   position: absolute;
-  top: 10px;
-  right: 0; 
-  
-  width: 250px;
-  background-color: white; 
-  border: 1px solid #333; 
-  border-radius: 8px;
-  padding: 15px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  top: 8px;
+  right: 0;
+
+  width: 180px;
+  background-color: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.08);
   z-index: 100;
 
-  transition: transform 0.5s ease-out; 
-  transform: translateX(105%); 
+  transition: transform 0.3s ease-out;
+  transform: translateX(110%);
 }
 .reminder-box.is-visible { transform: translateX(0); }
 .reminder-header {
   display: flex;
   align-items: center;
-  font-weight: bold;
-  font-size: 16px;
-  color: #192038;
-  margin-bottom: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #111827;
+  margin-bottom: 6px;
 }
 .close-button {
   background: none;
   border: none;
-  font-size: 18px;
+  font-size: 14px;
   cursor: pointer;
-  color: #666;
-  margin-left: auto; 
+  color: #6b7280;
+  margin-left: auto;
 }
 .reminder-content { padding-left: 0; }
 .reminder-content ul {
-    list-style: none; 
-    padding: 0;
-    margin: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 .reminder-content li {
-    display: flex; 
-    align-items: center;
-    margin-bottom: 5px;
-    font-size: 14px;
-    color: #333;
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #374151;
 }
 .color-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%; 
-    margin-right: 8px; 
-    flex-shrink: 0; 
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 .red-dot { background-color: #EF5350; }
 .yellow-dot { background-color: #FFD54F; }
-.green-dot { background-color: #A5D6A7; }
+.green-dot { background-color: #43A047; }
 
 
 /* ======================== B 区: Table (确保局部滚动和搜索框集成) ======================== */
@@ -514,4 +553,8 @@ export default {
 }
 .el-table :deep(.warning-row) { background: oldlace !important; }
 .el-table :deep(.success-row) { background: #f0f9eb !important; }
+/* Time cost based row highlighting */
+.el-table :deep(.time-cost-red) { background: rgba(229,57,53,0.08) !important; }
+.el-table :deep(.time-cost-yellow) { background: rgba(253,216,53,0.08) !important; }
+.el-table :deep(.time-cost-green) { background: rgba(67,160,71,0.12) !important; }
 </style>

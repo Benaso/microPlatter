@@ -86,7 +86,7 @@ impl SessionRepository for PostgresSessionRepository {
             .map_err(|e| AppError::Database(e.into()))?;
         
         let rows = client.query(
-            "SELECT id, name, description, created_at, event_count 
+            "SELECT id, name, description, created_at, event_count, time_cost 
              FROM sessions WHERE id = $1",
             &[&session_id],
         ).await.map_err(|e| AppError::Database(e.into()))?;
@@ -98,6 +98,7 @@ impl SessionRepository for PostgresSessionRepository {
                 description: row.get(2),
                 created_at: row.get(3),
                 event_count: row.get(4),
+                time_cost: row.get(5),
             }))
         } else {
             Ok(None)

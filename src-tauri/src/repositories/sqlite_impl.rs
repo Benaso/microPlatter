@@ -82,7 +82,7 @@ impl SessionRepository for SqliteSessionRepository {
     async fn get_session(&self, session_id: i64) -> AppResult<Option<Session>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at, event_count 
+            "SELECT id, name, description, created_at, event_count, time_cost 
              FROM sessions WHERE id = ?1"
         )?;
         
@@ -100,6 +100,7 @@ impl SessionRepository for SqliteSessionRepository {
                 description: row.get(2)?,
                 created_at,
                 event_count: row.get(4)?,
+                time_cost: row.get(5)?,
             }))
         } else {
             Ok(None)
@@ -109,7 +110,7 @@ impl SessionRepository for SqliteSessionRepository {
     async fn list_sessions(&self) -> AppResult<Vec<Session>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at, event_count 
+            "SELECT id, name, description, created_at, event_count, time_cost 
              FROM sessions ORDER BY created_at DESC"
         )?;
         
@@ -125,6 +126,7 @@ impl SessionRepository for SqliteSessionRepository {
                 description: row.get(2)?,
                 created_at,
                 event_count: row.get(4)?,
+                time_cost: row.get(5)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

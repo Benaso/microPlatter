@@ -9,6 +9,7 @@ pub struct Session {
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub event_count: i64,
+    pub time_cost: f64,
 }
 
 /// API 响应 - 返回给前端
@@ -20,6 +21,7 @@ pub struct SessionResponse {
     /// ISO 8601 格式，如: "2023-12-19T10:20:34Z"
     pub created_at: String,
     pub event_count: i64,
+    pub time_cost: f64,
 }
 
 /// API 请求 - 创建会话
@@ -44,6 +46,7 @@ impl From<Session> for SessionResponse {
             description: session.description,
             created_at: session.created_at.to_rfc3339(),
             event_count: session.event_count,
+            time_cost: session.time_cost,
         }
     }
 }
